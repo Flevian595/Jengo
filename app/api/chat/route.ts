@@ -1,8 +1,9 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // lets long code replies stream on Vercel
 
-const BASE_URL = (process.env.AI_BASE_URL ?? "http://localhost:11434/v1").replace(/\/$/, "");
-const MODEL = process.env.AI_MODEL ?? "qwen2.5-coder:7b";
+const BASE_URL = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "");
+const MODEL = process.env.AI_MODEL ?? "qwen/qwen3-coder";
 const API_KEY = process.env.AI_API_KEY;
 const MAX_MESSAGES = 30;
 
@@ -36,6 +37,16 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (!API_KEY) {
+    return Response.json(
+      {
+        error:
+          "AI_API_KEY is not set. Add it in Vercel under Settings, Environment Variables, then redeploy.",
+      },
+      { status: 500 },
+    );
+  }
+
   let body: { messages?: unknown };
   try {
     body = await req.json();
@@ -54,22 +65,23 @@ export async function POST(req: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+        Authorization: `Bearer ${API_KEY}`,
+        "X-Title": "Jengo",
       },
       body: JSON.stringify({
         model: MODEL,
         stream: true,
         temperature: 0.2,
+        top_p: 0.95,
+        max_tokens: 4096,
         messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
       }),
       signal: req.signal,
     });
-  } catch (err) {
+  } catch {
     if (req.signal.aborted) return new Response(null, { status: 499 });
     return Response.json(
-      {
-        error: `Can't reach the model server at ${BASE_URL}. Start Ollama (or check AI_BASE_URL in .env.local), then try again.`,
-      },
+      { error: `Can't reach the model server at ${BASE_URL}. Check AI_BASE_URL and try again.` },
       { status: 502 },
     );
   }
